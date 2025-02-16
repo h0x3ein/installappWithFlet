@@ -1,4 +1,5 @@
 import subprocess
+import json
 import flet as ft
 
 # Available Helm applications
@@ -26,7 +27,16 @@ def is_context_reachable(context_name: str) -> bool:
     except:
         return False
 
-# Install an app with Helm and show full error
+# Get deployed Helm releases
+def get_helm_releases(kube_context):
+    try:
+        cmd = ["helm", "list", "--all-namespaces", "-o", "json", "--kube-context", kube_context]
+        output = subprocess.check_output(cmd)
+        return json.loads(output)
+    except Exception:
+        return []
+
+# Install an app with Helm
 def install_app(release_name, app_name, namespace, image_tag, kube_context):
     chart_ref = AVAILABLE_APPS.get(app_name)
     if not chart_ref:
@@ -46,6 +56,15 @@ def install_app(release_name, app_name, namespace, image_tag, kube_context):
     except subprocess.CalledProcessError as e:
         return f"❌ {e.output.strip()}"  # Shows the actual Helm error message
 
+# Delete a Helm release
+def delete_app(release_name, namespace, kube_context):
+    cmd = ["helm", "uninstall", release_name, "-n", namespace, "--kube-context", kube_context]
+    try:
+        subprocess.check_call(cmd)
+        return f"✅ Deleted release '{release_name}' from namespace '{namespace}'"
+    except subprocess.CalledProcessError as e:
+        return f"❌ Error deleting {release_name}: {e}"
+
 # Main UI
 def main(page: ft.Page):
     page.title = "Helm Manager"
@@ -63,6 +82,7 @@ def main(page: ft.Page):
             selected_context["name"] = chosen
             context_label.value = f"Current context: {chosen}"
             context_status.bgcolor = "green" if is_context_reachable(chosen) else "red"
+            refresh_releases(None)  # Auto-refresh deployed apps when context changes
         else:
             selected_context["name"] = None
             context_label.value = "No context selected"
@@ -77,6 +97,8 @@ def main(page: ft.Page):
     )
 
     # Install New App Section (Initially Hidden)
+    install_section = ft.Column(visible=False)
+
     release_name_input = ft.TextField(label="Release Name", width=200)
     app_dropdown = ft.Dropdown(
         label="Application",
@@ -86,7 +108,6 @@ def main(page: ft.Page):
     namespace_input = ft.TextField(label="Namespace", width=200)
     image_tag_input = ft.TextField(label="Image Tag", width=200)
     install_status = ft.Text("")
-    install_section = ft.Column(visible=False)
 
     def on_install_click(e):
         if not selected_context["name"]:
@@ -103,17 +124,81 @@ def main(page: ft.Page):
             install_status.value = "⚠️ Please fill all fields!"
         else:
             install_status.value = install_app(rname, aname, ns, tag, selected_context["name"])
-
+        
+        refresh_releases(None)  # Refresh list after installing
         page.update()
 
     install_button = ft.ElevatedButton("Install", on_click=on_install_click)
 
     def toggle_install_section(e):
-        install_section.visible = not install_section.visible
+        install_section.visible = not install_section.visible  # FIX: Now toggles correctly
         page.update()
 
     install_toggle_btn = ft.ElevatedButton("Install New App", on_click=toggle_install_section)
-    refresh_button = ft.ElevatedButton("Refresh Deployed Apps")
+
+    # Deployed Apps Section
+    deployments_column = ft.Column()
+
+    def on_delete_click(e, rname, ns):
+        """Delete a release when trash icon is clicked."""
+        if not selected_context["name"]:
+            page.snack_bar = ft.SnackBar(ft.Text("⚠️ Select a context first!"))
+            page.snack_bar.open = True
+            page.update()
+            return
+
+        msg = delete_app(rname, ns, selected_context["name"])
+        page.snack_bar = ft.SnackBar(ft.Text(msg))
+        page.snack_bar.open = True
+        refresh_releases(None)  # Refresh list after deletion
+
+    def refresh_releases(e):
+        """Refresh the list of deployed Helm releases."""
+        deployments_column.controls.clear()
+
+        header = ft.Row(
+            controls=[
+                ft.Text("Release", width=140, weight="bold"),
+                ft.Text("Namespace", width=120, weight="bold"),
+                ft.Text("Status", width=100, weight="bold"),
+                ft.Text("Chart", width=150, weight="bold"),
+                ft.Text("", width=40),  # Placeholder for delete icon
+            ],
+            spacing=5
+        )
+        deployments_column.controls.append(header)
+
+        if not selected_context["name"]:
+            page.update()
+            return
+
+        releases = get_helm_releases(selected_context["name"])
+        for r in releases:
+            rname = r.get("name")
+            ns = r.get("namespace")
+            status = r.get("status")
+            chart_field = r.get("chart", "")
+
+            # Row for each deployed app
+            row = ft.Row(
+                controls=[
+                    ft.Text(rname, width=140),
+                    ft.Text(ns, width=120),
+                    ft.Text(status, width=100),
+                    ft.Text(chart_field, width=150),
+                    ft.IconButton(
+                        icon=ft.icons.DELETE,
+                        tooltip="Delete release",
+                        on_click=lambda e, rn=rname, n=ns: on_delete_click(e, rn, n)
+                    ),
+                ],
+                spacing=5
+            )
+            deployments_column.controls.append(row)
+
+        page.update()
+
+    refresh_button = ft.ElevatedButton("Refresh Deployed Apps", on_click=refresh_releases)
 
     # Layout
     page.add(
@@ -121,6 +206,8 @@ def main(page: ft.Page):
         context_label,
         ft.Row([install_toggle_btn, refresh_button]),
         install_section,
+        ft.Text("Deployed Apps", style="headlineSmall"),
+        deployments_column
     )
 
     install_section.controls.extend([
