@@ -41,8 +41,8 @@ Before running Helm Manager, ensure the following are installed on your system:
 Clone this repository and install required Python packages:
 
 ```sh
-git clone https://github.com/your-org/helm-manager.git
-cd helm-manager
+git clone git@github.com:h0x3ein/installappWithFlet.git
+cd installappWithFlet
 pip install flet
 ```
 
@@ -141,6 +141,6 @@ For contributions, open an issue or create a pull request! 🎯
 For inquiries, reach out to:
 
 📧 Email: Hosseinjafari3264@gmail.com  
-🔗 GitHub: [github.com/h0x3ein](https://github.com/your-org)  
+🔗 GitHub: [github.com/h0x3ein](https://github.com/h0x3ein)  
 🏢 Company: [www.HSBabi.com](https://www.HSBabi.com)
 
